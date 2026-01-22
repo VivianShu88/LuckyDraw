@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { GoogleGenAI } from "@google/genai";
-import { Settings, Play, Square, Trophy, Users, Image as ImageIcon, Trash2, PartyPopper, Volume2, VolumeX, Upload, Wand2, Hash, X } from "lucide-react";
+import { Settings, Play, Square, Trophy, Users, Image as ImageIcon, Trash2, PartyPopper, Volume2, VolumeX, Upload, Wand2, Hash, X, AlertCircle } from "lucide-react";
 
 // --- Types ---
 interface Participant {
@@ -16,6 +16,7 @@ interface WinnerRecord {
   winners: Participant[];
   timestamp: number;
   aiComment?: string;
+  isDeleted?: boolean; // New field to track deletion status
 }
 
 // --- Constants ---
@@ -88,6 +89,8 @@ const App = () => {
   // UI State
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<string | null>(null); // For single record deletion
   const [textInput, setTextInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -145,7 +148,11 @@ const App = () => {
   }, [allParticipants, history, bgImage, isMuted, roundNumber]);
 
   // -- Computed --
-  const winnerIds = new Set(history.flatMap(h => h.winners.map(w => w.id)));
+  // Winner IDs now excludes those in "deleted" records
+  const winnerIds = new Set(history
+    .filter(h => !h.isDeleted)
+    .flatMap(h => h.winners.map(w => w.id))
+  );
   const availableParticipants = allParticipants.filter(p => !winnerIds.has(p.id));
 
   // -- Audio Controller --
@@ -295,15 +302,35 @@ const App = () => {
   };
 
   const handleClearHistory = () => {
-    if (confirm("确定清空所有中奖记录并重置轮数吗？")) {
-      setHistory([]);
-      setLastRoundResult(null);
-      setRoundNumber(1);
-      setShowConfetti(false);
-      setShowHistory(false);
-    }
+    setShowClearConfirm(true);
+  };
+
+  const confirmClearHistory = () => {
+    setHistory([]);
+    setLastRoundResult(null);
+    setRoundNumber(1);
+    setDrawCount(1);
+    setShowConfetti(false);
+    setShowHistory(false);
+    setShowSettings(false);
+    setCurrentRollingName("准备就绪");
+    setShowClearConfirm(false);
   };
   
+  // Single Record Deletion Logic
+  const handleDeleteRecordClick = (id: string) => {
+    setRecordToDelete(id);
+  };
+
+  const confirmDeleteRecord = () => {
+    if (recordToDelete) {
+      setHistory(prev => prev.map(item => 
+        item.id === recordToDelete ? { ...item, isDeleted: true } : item
+      ));
+      setRecordToDelete(null);
+    }
+  };
+
   const handleCloseResultModal = () => {
     setLastRoundResult(null);
   };
@@ -632,15 +659,15 @@ const App = () => {
         </div>
       )}
 
-      {/* History Sidebar */}
+      {/* History Sidebar - Explicit Z-Index via style */}
       {showHistory && (
-        <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-gray-900/95 backdrop-blur-xl border-l border-white/10 shadow-2xl flex flex-col transition-transform">
+        <div className="fixed inset-y-0 right-0 w-full max-w-md bg-gray-900/95 backdrop-blur-xl border-l border-white/10 shadow-2xl flex flex-col transition-transform" style={{ zIndex: 60 }}>
            <div className="p-6 border-b border-white/10 flex justify-between items-center">
               <h2 className="text-xl font-bold">中奖记录</h2>
               <div className="flex items-center gap-4">
                   <button 
                     onClick={handleClearHistory}
-                    className="text-red-400 hover:text-red-300 flex items-center gap-1 text-sm font-semibold bg-red-900/10 px-3 py-1.5 rounded-lg border border-red-500/20 transition hover:bg-red-900/20"
+                    className="text-red-400 hover:text-red-300 flex items-center gap-1 text-sm font-semibold bg-red-900/10 px-3 py-1.5 rounded-lg border border-red-500/20 transition hover:bg-red-900/20 cursor-pointer"
                     title="清空记录"
                   >
                     <Trash2 size={14} /> 清空记录
@@ -656,10 +683,32 @@ const App = () => {
                 </div>
               ) : (
                 history.map((record) => (
-                  <div key={record.id} className="bg-white/5 rounded-xl p-4 border border-white/5 hover:border-yellow-500/30 transition">
-                     <div className="flex justify-between items-start mb-2">
-                       <span className="text-white font-bold text-sm bg-blue-600/30 px-2 py-0.5 rounded">第 {record.roundId} 轮</span>
-                       <span className="text-yellow-500 font-bold text-sm bg-yellow-900/20 px-2 py-0.5 rounded">{record.prizeName}</span>
+                  <div key={record.id} className={`relative rounded-xl p-4 border transition ${record.isDeleted ? 'bg-white/5 border-white/5 opacity-50 grayscale select-none' : 'bg-white/10 border-white/10 hover:border-yellow-500/30'}`}>
+                     {!record.isDeleted && (
+                         <button 
+                            onClick={() => handleDeleteRecordClick(record.id)}
+                            className="absolute top-2 right-2 p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-md transition z-10"
+                            title="作废此记录"
+                         >
+                            <Trash2 size={16} />
+                         </button>
+                     )}
+                     
+                     <div className="flex justify-between items-start mb-2 pr-8">
+                       <div className="flex gap-2">
+                           <span className="text-white font-bold text-sm bg-blue-600/30 px-2 py-0.5 rounded">第 {record.roundId} 轮</span>
+                           {record.isDeleted && (
+                               <span className="text-red-300 font-bold text-xs bg-red-900/40 px-2 py-0.5 rounded flex items-center gap-1">
+                                   <AlertCircle size={10} /> 已作废
+                               </span>
+                           )}
+                       </div>
+                       <div className="flex items-center gap-2">
+                          <span className="text-gray-400 text-xs font-medium bg-white/5 px-1.5 py-0.5 rounded flex items-center gap-1">
+                            <Users size={10} /> {record.winners.length}人
+                          </span>
+                          <span className="text-yellow-500 font-bold text-sm bg-yellow-900/20 px-2 py-0.5 rounded">{record.prizeName}</span>
+                       </div>
                      </div>
                      <div className="flex flex-wrap gap-2 mb-3">
                        {record.winners.map(w => (
@@ -678,6 +727,67 @@ const App = () => {
                 ))
               )}
            </div>
+        </div>
+      )}
+      
+      {/* CLEAR CONFIRM MODAL - Very High Z-Index */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 100 }}>
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowClearConfirm(false)}></div>
+            <div className="relative bg-gray-900 border border-red-500/30 rounded-2xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
+                    <Trash2 size={32} className="text-red-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">确认清空？</h3>
+                <p className="text-gray-400 mb-6">
+                    即将清空所有中奖记录，并将抽奖进度重置为<span className="text-yellow-500 font-bold">第 1 轮</span>。
+                    <br/>此操作无法撤销。
+                </p>
+                <div className="flex gap-4 w-full">
+                    <button 
+                        onClick={() => setShowClearConfirm(false)}
+                        className="flex-1 bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition"
+                    >
+                        取消
+                    </button>
+                    <button 
+                        onClick={confirmClearHistory}
+                        className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition shadow-lg shadow-red-900/30"
+                    >
+                        确认清空
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* SINGLE RECORD DELETE CONFIRM MODAL - Even Higher Z-Index */}
+      {recordToDelete && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 110 }}>
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setRecordToDelete(null)}></div>
+            <div className="relative bg-gray-900 border border-red-500/30 rounded-2xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center">
+                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
+                    <Trash2 size={32} className="text-red-500" />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">作废该记录？</h3>
+                <p className="text-gray-400 mb-6 text-sm">
+                    该记录将被标记为<span className="text-red-400 font-bold">无效</span>，包含的<span className="text-yellow-500 font-bold">中奖者将回到奖池</span>，可再次参与抽奖。
+                </p>
+                <div className="flex gap-4 w-full">
+                    <button 
+                        onClick={() => setRecordToDelete(null)}
+                        className="flex-1 bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition"
+                    >
+                        取消
+                    </button>
+                    <button 
+                        onClick={confirmDeleteRecord}
+                        className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition shadow-lg shadow-red-900/30"
+                    >
+                        确认作废
+                    </button>
+                </div>
+            </div>
         </div>
       )}
 
