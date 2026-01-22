@@ -29,6 +29,17 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 const SOUND_DRUM_ROLL = "https://www.soundjay.com/misc/sounds/drum-roll-01.mp3";
 const SOUND_APPLAUSE = "https://www.soundjay.com/human/sounds/applause-01.mp3";
 
+// --- Helper Functions ---
+const loadFromStorage = () => {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.warn("Failed to parse local storage", e);
+  }
+  return null;
+};
+
 // --- Components ---
 
 // 1. Confetti Effect
@@ -66,13 +77,30 @@ const SpeedLines = ({ isActive }: { isActive: boolean }) => {
 
 // --- Main Application ---
 const App = () => {
-  // -- State --
-  const [allParticipants, setAllParticipants] = useState<Participant[]>([]);
-  const [history, setHistory] = useState<WinnerRecord[]>([]);
-  const [bgImage, setBgImage] = useState<string>("https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=2670&auto=format&fit=crop");
+  // -- State (Initialized Lazily from Storage) --
+  
+  const [allParticipants, setAllParticipants] = useState<Participant[]>(() => {
+    const data = loadFromStorage();
+    if (data && data.allParticipants) return data.allParticipants;
+    return DEFAULT_PARTICIPANTS.map(name => ({ id: generateId(), name }));
+  });
+
+  const [history, setHistory] = useState<WinnerRecord[]>(() => {
+    const data = loadFromStorage();
+    return (data && data.history) ? data.history : [];
+  });
+
+  const [bgImage, setBgImage] = useState<string>(() => {
+    const data = loadFromStorage();
+    return (data && data.bgImage) ? data.bgImage : "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=2670&auto=format&fit=crop";
+  });
   
   // Round Config
-  const [roundNumber, setRoundNumber] = useState(1);
+  const [roundNumber, setRoundNumber] = useState(() => {
+    const data = loadFromStorage();
+    return (data && data.roundNumber) ? data.roundNumber : 1;
+  });
+
   const [prizeName, setPrizeName] = useState("幸运大奖");
   const [drawCount, setDrawCount] = useState(1);
   
@@ -91,9 +119,22 @@ const App = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<string | null>(null); // For single record deletion
-  const [textInput, setTextInput] = useState("");
+  
+  const [textInput, setTextInput] = useState(() => {
+    // Initialize text input based on loaded participants
+    const data = loadFromStorage();
+    if (data && data.allParticipants) {
+      return data.allParticipants.map((p: Participant) => p.name).join('\n');
+    }
+    return DEFAULT_PARTICIPANTS.join('\n');
+  });
+
   const [aiLoading, setAiLoading] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  
+  const [isMuted, setIsMuted] = useState(() => {
+    const data = loadFromStorage();
+    return (data && data.isMuted !== undefined) ? data.isMuted : false;
+  });
 
   // Refs
   const rollIntervalRef = useRef<number | null>(null);
@@ -109,30 +150,12 @@ const App = () => {
     drumRollAudioRef.current.loop = true;
     applauseAudioRef.current = new Audio(SOUND_APPLAUSE);
 
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const data = JSON.parse(saved);
-        setAllParticipants(data.allParticipants || []);
-        setHistory(data.history || []);
-        if (data.bgImage) setBgImage(data.bgImage);
-        if (data.isMuted !== undefined) setIsMuted(data.isMuted);
-        if (data.roundNumber) setRoundNumber(data.roundNumber);
-        if (data.allParticipants) setTextInput(data.allParticipants.map((p: Participant) => p.name).join('\n'));
-      } catch (e) {
-        console.error("Failed to parse local storage", e);
-      }
-    } else {
-      const defaults = DEFAULT_PARTICIPANTS.map(name => ({ id: generateId(), name }));
-      setAllParticipants(defaults);
-      setTextInput(defaults.map(p => p.name).join('\n'));
-    }
-
     return () => {
       stopAudio();
     };
   }, []);
 
+  // Save to Storage on Change
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
