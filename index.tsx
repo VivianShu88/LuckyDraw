@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { GoogleGenAI } from "@google/genai";
-import { Settings, Play, Square, Trophy, Users, Image as ImageIcon, Trash2, PartyPopper, Volume2, VolumeX, Upload, Wand2, Hash, X, AlertCircle, Type } from "lucide-react";
+import { Settings, Play, Square, Trophy, Users, Image as ImageIcon, Trash2, Volume2, VolumeX, Upload, Wand2, Hash, X, AlertCircle, Type } from "lucide-react";
 
 // --- Types ---
 interface Participant {
@@ -16,12 +16,11 @@ interface WinnerRecord {
   winners: Participant[];
   timestamp: number;
   aiComment?: string;
-  isDeleted?: boolean; // New field to track deletion status
+  isDeleted?: boolean;
 }
 
 // --- Constants ---
-const STORAGE_KEY = "lottery_app_v3"; 
-// Default list is now numbers 1-100
+const STORAGE_KEY = "lottery_app_v4"; 
 const DEFAULT_PARTICIPANTS = Array.from({ length: 100 }, (_, i) => String(i + 1));
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -40,9 +39,7 @@ const loadFromStorage = () => {
   return null;
 };
 
-// --- Components ---
-
-// 1. Confetti Effect
+// --- Visual Effects Components ---
 const ConfettiExplosion = ({ isActive }: { isActive: boolean }) => {
   if (!isActive) return null;
   const particles = Array.from({ length: 100 }).map((_, i) => {
@@ -66,7 +63,6 @@ const ConfettiExplosion = ({ isActive }: { isActive: boolean }) => {
   return <div className="confetti-container">{particles}</div>;
 };
 
-// 2. Speed Lines Effect
 const SpeedLines = ({ isActive }: { isActive: boolean }) => {
   if (!isActive) return null;
   const lines = Array.from({ length: 20 }).map((_, i) => (
@@ -77,8 +73,7 @@ const SpeedLines = ({ isActive }: { isActive: boolean }) => {
 
 // --- Main Application ---
 const App = () => {
-  // -- State (Initialized Lazily from Storage) --
-  
+  // -- State Initialization --
   const [eventName, setEventName] = useState(() => {
     const data = loadFromStorage();
     return (data && data.eventName) ? data.eventName : "C³ 杭州家宴";
@@ -100,45 +95,37 @@ const App = () => {
     return (data && data.bgImage) ? data.bgImage : "https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?q=80&w=2670&auto=format&fit=crop";
   });
   
-  // Round Config
   const [roundNumber, setRoundNumber] = useState(() => {
     const data = loadFromStorage();
     return (data && data.roundNumber) ? data.roundNumber : 1;
   });
 
+  const [isMuted, setIsMuted] = useState(() => {
+    const data = loadFromStorage();
+    return (data && data.isMuted !== undefined) ? data.isMuted : false;
+  });
+
+  // Local UI State
   const [prizeName, setPrizeName] = useState("幸运大奖");
   const [drawCount, setDrawCount] = useState(1);
-  
-  // Settings State for Range Generation
   const [rangeStart, setRangeStart] = useState<number>(1);
   const [rangeEnd, setRangeEnd] = useState<number>(100);
-
-  // Runtime State
   const [isRolling, setIsRolling] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [currentRollingName, setCurrentRollingName] = useState("准备就绪");
   const [lastRoundResult, setLastRoundResult] = useState<WinnerRecord | null>(null);
-  
-  // UI State
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [recordToDelete, setRecordToDelete] = useState<string | null>(null); // For single record deletion
+  const [recordToDelete, setRecordToDelete] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   
   const [textInput, setTextInput] = useState(() => {
-    // Initialize text input based on loaded participants
     const data = loadFromStorage();
     if (data && data.allParticipants) {
       return data.allParticipants.map((p: Participant) => p.name).join('\n');
     }
     return DEFAULT_PARTICIPANTS.join('\n');
-  });
-
-  const [aiLoading, setAiLoading] = useState(false);
-  
-  const [isMuted, setIsMuted] = useState(() => {
-    const data = loadFromStorage();
-    return (data && data.isMuted !== undefined) ? data.isMuted : false;
   });
 
   // Refs
@@ -148,19 +135,15 @@ const App = () => {
   const applauseTimeoutRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // -- Initialization --
+  // -- Effects --
   useEffect(() => {
-    // Audio Init
     drumRollAudioRef.current = new Audio(SOUND_DRUM_ROLL);
     drumRollAudioRef.current.loop = true;
     applauseAudioRef.current = new Audio(SOUND_APPLAUSE);
 
-    return () => {
-      stopAudio();
-    };
+    return () => stopAudio();
   }, []);
 
-  // Save to Storage on Change
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -172,19 +155,18 @@ const App = () => {
         roundNumber
       }));
     } catch (e) {
-      console.warn("Storage quota exceeded, settings (background) may not be saved.", e);
+      console.warn("Storage quota exceeded", e);
     }
   }, [eventName, allParticipants, history, bgImage, isMuted, roundNumber]);
 
   // -- Computed --
-  // Winner IDs now excludes those in "deleted" records
   const winnerIds = new Set(history
     .filter(h => !h.isDeleted)
     .flatMap(h => h.winners.map(w => w.id))
   );
   const availableParticipants = allParticipants.filter(p => !winnerIds.has(p.id));
 
-  // -- Audio Controller --
+  // -- Audio --
   const stopAudio = () => {
     if (drumRollAudioRef.current) {
       drumRollAudioRef.current.pause();
@@ -201,7 +183,7 @@ const App = () => {
 
   const playDrumRoll = () => {
     if (isMuted || !drumRollAudioRef.current) return;
-    stopAudio(); // Ensure clean state
+    stopAudio();
     drumRollAudioRef.current.currentTime = 0;
     drumRollAudioRef.current.volume = 1.0;
     drumRollAudioRef.current.play().catch(e => console.warn("Audio blocked:", e));
@@ -209,33 +191,25 @@ const App = () => {
 
   const playShortApplause = () => {
     if (isMuted || !applauseAudioRef.current) return;
-    stopAudio(); // Stop drums
-    
+    stopAudio();
     const audio = applauseAudioRef.current;
     audio.currentTime = 0;
     audio.volume = 1.0;
     audio.play().catch(e => console.warn("Audio blocked:", e));
 
-    // Fade out logic: Play for 4s, then fade out over 2s
-    const fadeDuration = 2000;
     const playDuration = 4000;
-    
     applauseTimeoutRef.current = window.setTimeout(() => {
-      // Start fade out
       const fadeInterval = setInterval(() => {
-        if (audio.volume > 0.1) {
-          audio.volume -= 0.1;
-        } else {
+        if (audio.volume > 0.1) audio.volume -= 0.1;
+        else {
           audio.pause();
-          audio.currentTime = 0;
-          audio.volume = 1.0;
           clearInterval(fadeInterval);
         }
-      }, fadeDuration / 10);
+      }, 200);
     }, playDuration);
   };
 
-  // -- AI Service --
+  // -- AI --
   const generateAiComment = async (prize: string, winners: string[]) => {
     if (!process.env.API_KEY) return;
     setAiLoading(true);
@@ -245,7 +219,6 @@ const App = () => {
         背景: 公司年会抽奖。奖项: "${prize}"。中奖者: ${winners.join(', ')}。
         任务: 生成一句非常简短的恭喜语，必须控制在12个汉字以内。
         要求: 只有一行，不使用引号，语气喜庆幽默。
-        例如: "恭喜发财，明年暴富！" 或 "运气太好了，欧皇附体！"
       `;
       const result = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -269,20 +242,12 @@ const App = () => {
 
   // -- Logic --
   const startRolling = () => {
-    if (availableParticipants.length === 0) {
-      alert("奖池已空！");
-      return;
-    }
-    
-    // Reset States
+    if (availableParticipants.length === 0) return alert("奖池已空！");
     setLastRoundResult(null);
     setShowConfetti(false);
     setIsRolling(true);
-    
-    // Start Audio
     playDrumRoll();
 
-    // Start Visual Loop (Fast)
     rollIntervalRef.current = window.setInterval(() => {
       const randomIndex = Math.floor(Math.random() * availableParticipants.length);
       setCurrentRollingName(availableParticipants[randomIndex].name);
@@ -294,19 +259,14 @@ const App = () => {
     clearInterval(rollIntervalRef.current);
     rollIntervalRef.current = null;
     setIsRolling(false);
-    
-    // Play Applause (Short version)
     playShortApplause();
 
-    // Select Winners
     const pool = [...availableParticipants];
-    // Modern Fisher-Yates shuffle
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    const actualCount = Math.min(drawCount, pool.length);
-    const winners = pool.slice(0, actualCount);
+    const winners = pool.slice(0, Math.min(drawCount, pool.length));
 
     const record: WinnerRecord = {
       id: generateId(),
@@ -318,37 +278,19 @@ const App = () => {
 
     setLastRoundResult(record);
     setHistory(prev => [record, ...prev]);
-    setShowConfetti(true); // Trigger Confetti
-
-    // Auto increment round number
+    setShowConfetti(true);
     setRoundNumber(prev => prev + 1);
-
-    // Clean up confetti after 5s
     setTimeout(() => setShowConfetti(false), 5000);
-
-    // AI
     generateAiComment(prizeName, winners.map(w => w.name));
-  };
-
-  const handleClearHistory = () => {
-    setShowClearConfirm(true);
   };
 
   const confirmClearHistory = () => {
     setHistory([]);
     setLastRoundResult(null);
     setRoundNumber(1);
-    setDrawCount(1);
     setShowConfetti(false);
-    setShowHistory(false);
-    setShowSettings(false);
     setCurrentRollingName("准备就绪");
     setShowClearConfirm(false);
-  };
-  
-  // Single Record Deletion Logic
-  const handleDeleteRecordClick = (id: string) => {
-    setRecordToDelete(id);
   };
 
   const confirmDeleteRecord = () => {
@@ -360,8 +302,17 @@ const App = () => {
     }
   };
 
-  const handleCloseResultModal = () => {
-    setLastRoundResult(null);
+  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) alert("图片较大，可能无法保存到缓存，但本次可用。");
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') setBgImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
   };
 
   const updateParticipants = () => {
@@ -371,36 +322,11 @@ const App = () => {
   };
 
   const generateRangeParticipants = () => {
-    if (isNaN(rangeStart) || isNaN(rangeEnd) || rangeStart > rangeEnd) {
-      alert("请输入有效的数字范围");
-      return;
-    }
     const names: string[] = [];
-    for (let i = rangeStart; i <= rangeEnd; i++) {
-      names.push(String(i));
-    }
+    for (let i = rangeStart; i <= rangeEnd; i++) names.push(String(i));
     setAllParticipants(names.map(name => ({ id: generateId(), name })));
     setTextInput(names.join('\n'));
     setShowSettings(false);
-  };
-
-  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // Increased to 10MB
-      if (file.size > 10 * 1024 * 1024) { 
-         alert("图片较大（>10MB），可能无法保存到下次访问，但本次可以使用。");
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === 'string') {
-          setBgImage(reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-    // IMPORTANT: Reset value so same file can be selected again
-    e.target.value = '';
   };
 
   return (
@@ -412,14 +338,13 @@ const App = () => {
         backgroundPosition: 'center'
       }}
     >
-      {/* Visual Effects Layer */}
       <div className="absolute inset-0 bg-black/40 z-0"></div>
       <SpeedLines isActive={isRolling} />
       <ConfettiExplosion isActive={showConfetti} />
 
-      {/* Header */}
+      {/* HEADER: Updated Style (No Italic, Fully Visible) */}
       <header className="relative z-30 p-6 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent">
-        <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white drop-shadow-md italic">
+        <h1 className="text-4xl md:text-5xl font-black tracking-wider text-yellow-400 drop-shadow-[0_4px_6px_rgba(0,0,0,0.5)] pb-1">
           {eventName}
         </h1>
         <div className="flex gap-3">
@@ -435,10 +360,8 @@ const App = () => {
         </div>
       </header>
 
-      {/* Main Stage */}
+      {/* MAIN STAGE */}
       <main className="relative z-20 flex-grow flex flex-col items-center justify-center p-4">
-        
-        {/* Display Area */}
         <div className="w-full flex-grow flex items-center justify-center relative mb-8 min-h-[400px]">
             {isRolling ? (
                <div className="text-center animate-shake relative z-10">
@@ -450,7 +373,6 @@ const App = () => {
                   </div>
                </div>
             ) : (
-              // Default "Ready" View - Always shown when not rolling, behind the modal if modal is open
               <div className="text-center opacity-80 hover:opacity-100 transition duration-500">
                  <div className="w-32 h-32 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-yellow-500/50 shadow-[0_0_30px_rgba(253,224,71,0.3)]">
                    <Trophy size={64} className="text-yellow-400" />
@@ -463,10 +385,9 @@ const App = () => {
             )}
         </div>
 
-        {/* Controls Bar */}
+        {/* CONTROLS */}
         <div className="bg-black/60 backdrop-blur-xl rounded-2xl p-6 w-full max-w-5xl flex flex-col md:flex-row gap-6 items-end border border-white/10 shadow-2xl z-30 transform transition-all hover:scale-[1.01]">
            <div className="flex-grow grid grid-cols-1 md:grid-cols-12 gap-4 w-full">
-              {/* Round Number Input */}
               <div className="md:col-span-2 space-y-2">
                 <label className="text-xs uppercase tracking-wider text-yellow-500/80 font-bold ml-1">轮数</label>
                 <div className="relative">
@@ -482,7 +403,6 @@ const App = () => {
                 </div>
               </div>
 
-              {/* Prize Name */}
               <div className="md:col-span-6 space-y-2">
                 <label className="text-xs uppercase tracking-wider text-yellow-500/80 font-bold ml-1">奖项名称</label>
                 <input 
@@ -493,7 +413,6 @@ const App = () => {
                 />
               </div>
 
-              {/* Draw Count */}
               <div className="md:col-span-4 space-y-2">
                 <label className="text-xs uppercase tracking-wider text-yellow-500/80 font-bold ml-1">抽取人数</label>
                 <input 
@@ -527,48 +446,22 @@ const App = () => {
              )}
            </button>
         </div>
-
       </main>
 
       {/* WINNER MODAL */}
       {lastRoundResult && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-          onClick={handleCloseResultModal}
-        >
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm cursor-pointer"></div>
-
-          {/* Modal Content */}
-          <div 
-            className="relative z-10 bg-black/50 backdrop-blur-2xl p-8 md:p-12 rounded-3xl border border-yellow-500/20 shadow-[0_0_60px_rgba(255,215,0,0.2)] flex flex-col items-center max-w-6xl w-full mx-4 animate-pop-in"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Close Button */}
-            <button 
-              onClick={handleCloseResultModal}
-              className="absolute top-4 right-4 p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition"
-            >
-              <X size={24} />
-            </button>
-
-            <h2 className="text-4xl text-yellow-300 font-black mb-8 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">
-              🎉 第 {lastRoundResult.roundId} 轮中奖名单 🎉
-            </h2>
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setLastRoundResult(null)}>
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+          <div className="relative z-10 bg-black/50 backdrop-blur-2xl p-8 md:p-12 rounded-3xl border border-yellow-500/20 shadow-[0_0_60px_rgba(255,215,0,0.2)] flex flex-col items-center max-w-6xl w-full mx-4 animate-pop-in" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setLastRoundResult(null)} className="absolute top-4 right-4 p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-full transition"><X size={24} /></button>
+            <h2 className="text-4xl text-yellow-300 font-black mb-8 drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)]">🎉 第 {lastRoundResult.roundId} 轮中奖名单 🎉</h2>
             <div className="flex flex-wrap gap-6 justify-center w-full">
               {lastRoundResult.winners.map((w, idx) => (
-                <div 
-                  key={w.id} 
-                  className="bg-gradient-to-t from-red-600 to-red-500 border-4 border-yellow-400 text-white px-10 py-6 rounded-2xl text-4xl font-extrabold shadow-[0_10px_30px_rgba(0,0,0,0.5)] transform hover:scale-110 transition-transform duration-200"
-                  style={{ animationDelay: `${idx * 0.1}s` }}
-                >
+                <div key={w.id} className="bg-gradient-to-t from-red-600 to-red-500 border-4 border-yellow-400 text-white px-10 py-6 rounded-2xl text-4xl font-extrabold shadow-[0_10px_30px_rgba(0,0,0,0.5)] transform hover:scale-110 transition-transform duration-200" style={{ animationDelay: `${idx * 0.1}s` }}>
                   {w.name}
                 </div>
               ))}
             </div>
-            
-            {/* AI Comment */}
             <div className="mt-10 min-h-[60px] max-w-3xl text-center w-full">
               {aiLoading ? (
                  <div className="text-yellow-200/60 animate-pulse">AI 正在生成神评...</div>
@@ -582,7 +475,7 @@ const App = () => {
         </div>
       )}
 
-      {/* Settings Modal */}
+      {/* SETTINGS MODAL */}
       {showSettings && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
           <div className="bg-gray-900 border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
@@ -592,7 +485,6 @@ const App = () => {
             </div>
             
             <div className="p-6 overflow-y-auto space-y-8">
-              {/* Event Name Config */}
               <section>
                 <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2"><Type size={16}/> 活动名称</h3>
                 <input 
@@ -603,24 +495,14 @@ const App = () => {
                 />
               </section>
 
-              {/* Background Upload */}
               <section>
                 <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2"><ImageIcon size={16}/> 背景图片</h3>
                 <div className="flex gap-4 items-center">
-                  <div 
-                    className="w-32 h-20 bg-gray-800 rounded-lg bg-cover bg-center border border-gray-600"
-                    style={{ backgroundImage: `url(${bgImage})` }}
-                  />
+                  <div className="w-32 h-20 bg-gray-800 rounded-lg bg-cover bg-center border border-gray-600" style={{ backgroundImage: `url(${bgImage})` }} />
                   <div className="flex-grow">
                      <label className="flex items-center gap-2 cursor-pointer bg-white/10 hover:bg-white/20 px-4 py-2 rounded-lg text-sm text-white transition w-fit">
                        <Upload size={16} /> 上传图片
-                       <input 
-                         ref={fileInputRef}
-                         type="file" 
-                         accept="image/*" 
-                         className="hidden" 
-                         onChange={handleBgUpload}
-                       />
+                       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
                      </label>
                      <p className="text-xs text-gray-500 mt-2">支持 JPG, PNG. 建议小于 10MB.</p>
                   </div>
@@ -635,134 +517,72 @@ const App = () => {
                 </div>
               </section>
 
-              {/* Participants */}
               <section>
                  <div className="flex justify-between items-center mb-3">
                    <h3 className="text-sm uppercase tracking-wider text-gray-400 flex items-center gap-2"><Users size={16}/> 名单设置</h3>
                    <span className="text-xs text-yellow-500 font-bold">当前: {allParticipants.length} 人</span>
                  </div>
                  
-                 {/* Generator Tool */}
                  <div className="bg-white/5 rounded-lg p-4 mb-4 border border-white/5">
                     <div className="flex items-center gap-2 mb-2 text-gray-300 text-sm font-semibold">
                       <Hash size={14} className="text-yellow-500"/> 快速生成数字名单
                     </div>
                     <div className="flex gap-2 items-center">
-                       <input 
-                         type="number" 
-                         value={rangeStart} 
-                         onChange={e => setRangeStart(parseInt(e.target.value))}
-                         className="w-24 bg-black/40 border border-white/20 rounded p-2 text-white text-center"
-                       />
+                       <input type="number" value={rangeStart} onChange={e => setRangeStart(parseInt(e.target.value))} className="w-24 bg-black/40 border border-white/20 rounded p-2 text-white text-center"/>
                        <span className="text-gray-500">至</span>
-                       <input 
-                         type="number" 
-                         value={rangeEnd} 
-                         onChange={e => setRangeEnd(parseInt(e.target.value))}
-                         className="w-24 bg-black/40 border border-white/20 rounded p-2 text-white text-center"
-                       />
-                       <button 
-                         onClick={generateRangeParticipants}
-                         className="ml-auto flex items-center gap-2 bg-yellow-600 hover:bg-yellow-500 text-white px-3 py-2 rounded text-xs font-bold transition"
-                       >
-                         <Wand2 size={14} /> 生成
-                       </button>
+                       <input type="number" value={rangeEnd} onChange={e => setRangeEnd(parseInt(e.target.value))} className="w-24 bg-black/40 border border-white/20 rounded p-2 text-white text-center"/>
+                       <button onClick={generateRangeParticipants} className="ml-auto flex items-center gap-2 bg-yellow-600 hover:bg-yellow-500 text-white px-3 py-2 rounded text-xs font-bold transition"><Wand2 size={14} /> 生成</button>
                     </div>
                  </div>
 
-                 <textarea 
-                    value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    placeholder="每行一个名字"
-                    className="w-full h-32 bg-black/40 border border-white/20 rounded-lg p-3 text-sm text-gray-300 focus:ring-2 focus:ring-yellow-500 outline-none font-mono"
-                 />
+                 <textarea value={textInput} onChange={(e) => setTextInput(e.target.value)} placeholder="每行一个名字" className="w-full h-32 bg-black/40 border border-white/20 rounded-lg p-3 text-sm text-gray-300 focus:ring-2 focus:ring-yellow-500 outline-none font-mono"/>
                  <div className="mt-4 flex justify-end">
-                   <button 
-                     onClick={updateParticipants}
-                     className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg transition"
-                   >
-                     保存自定义名单
-                   </button>
+                   <button onClick={updateParticipants} className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg transition">保存自定义名单</button>
                  </div>
               </section>
 
               <section className="pt-4 border-t border-white/10">
-                 <button 
-                   onClick={handleClearHistory}
-                   className="flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 px-4 py-2 rounded-lg transition"
-                 >
-                   <Trash2 size={16} /> 清空所有数据
-                 </button>
+                 <button onClick={() => setShowClearConfirm(true)} className="flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 px-4 py-2 rounded-lg transition"><Trash2 size={16} /> 清空所有数据</button>
               </section>
             </div>
           </div>
         </div>
       )}
 
-      {/* History Sidebar - Explicit Z-Index via style */}
+      {/* HISTORY SIDEBAR */}
       {showHistory && (
         <div className="fixed inset-y-0 right-0 w-full max-w-md bg-gray-900/95 backdrop-blur-xl border-l border-white/10 shadow-2xl flex flex-col transition-transform" style={{ zIndex: 60 }}>
            <div className="p-6 border-b border-white/10 flex justify-between items-center">
               <h2 className="text-xl font-bold">中奖记录</h2>
               <div className="flex items-center gap-4">
-                  <button 
-                    onClick={handleClearHistory}
-                    className="text-red-400 hover:text-red-300 flex items-center gap-1 text-sm font-semibold bg-red-900/10 px-3 py-1.5 rounded-lg border border-red-500/20 transition hover:bg-red-900/20 cursor-pointer"
-                    title="清空记录"
-                  >
-                    <Trash2 size={14} /> 清空记录
-                  </button>
+                  <button onClick={() => setShowClearConfirm(true)} className="text-red-400 hover:text-red-300 flex items-center gap-1 text-sm font-semibold bg-red-900/10 px-3 py-1.5 rounded-lg border border-red-500/20 transition hover:bg-red-900/20 cursor-pointer" title="清空记录"><Trash2 size={14} /> 清空</button>
                   <button onClick={() => setShowHistory(false)} className="text-gray-400 hover:text-white p-1 hover:bg-white/10 rounded-full transition">✕</button>
               </div>
            </div>
            <div className="flex-grow overflow-y-auto p-6 space-y-4">
               {history.length === 0 ? (
-                <div className="text-gray-500 text-center py-10 flex flex-col items-center">
-                   <div className="bg-white/5 p-4 rounded-full mb-3"><Trophy size={32} className="opacity-20"/></div>
-                   <p>暂无中奖记录</p>
-                </div>
+                <div className="text-gray-500 text-center py-10 flex flex-col items-center"><div className="bg-white/5 p-4 rounded-full mb-3"><Trophy size={32} className="opacity-20"/></div><p>暂无中奖记录</p></div>
               ) : (
                 history.map((record) => (
                   <div key={record.id} className={`relative rounded-xl p-4 border transition ${record.isDeleted ? 'bg-white/5 border-white/5 opacity-50 grayscale select-none' : 'bg-white/10 border-white/10 hover:border-yellow-500/30'}`}>
                      {!record.isDeleted && (
-                         <button 
-                            onClick={() => handleDeleteRecordClick(record.id)}
-                            className="absolute top-2 right-2 p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-md transition z-10"
-                            title="作废此记录"
-                         >
-                            <Trash2 size={16} />
-                         </button>
+                         <button onClick={() => setRecordToDelete(record.id)} className="absolute top-2 right-2 p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-900/20 rounded-md transition z-10" title="作废此记录"><Trash2 size={16} /></button>
                      )}
-                     
                      <div className="flex justify-between items-start mb-2 pr-8">
                        <div className="flex gap-2">
                            <span className="text-white font-bold text-sm bg-blue-600/30 px-2 py-0.5 rounded">第 {record.roundId} 轮</span>
-                           {record.isDeleted && (
-                               <span className="text-red-300 font-bold text-xs bg-red-900/40 px-2 py-0.5 rounded flex items-center gap-1">
-                                   <AlertCircle size={10} /> 已作废
-                               </span>
-                           )}
+                           {record.isDeleted && (<span className="text-red-300 font-bold text-xs bg-red-900/40 px-2 py-0.5 rounded flex items-center gap-1"><AlertCircle size={10} /> 已作废</span>)}
                        </div>
                        <div className="flex items-center gap-2">
-                          <span className="text-gray-400 text-xs font-medium bg-white/5 px-1.5 py-0.5 rounded flex items-center gap-1">
-                            <Users size={10} /> {record.winners.length}人
-                          </span>
+                          <span className="text-gray-400 text-xs font-medium bg-white/5 px-1.5 py-0.5 rounded flex items-center gap-1"><Users size={10} /> {record.winners.length}人</span>
                           <span className="text-yellow-500 font-bold text-sm bg-yellow-900/20 px-2 py-0.5 rounded">{record.prizeName}</span>
                        </div>
                      </div>
                      <div className="flex flex-wrap gap-2 mb-3">
-                       {record.winners.map(w => (
-                         <span key={w.id} className="bg-white/10 px-2 py-1 rounded text-sm text-gray-200 font-medium">
-                           {w.name}
-                         </span>
-                       ))}
+                       {record.winners.map(w => <span key={w.id} className="bg-white/10 px-2 py-1 rounded text-sm text-gray-200 font-medium">{w.name}</span>)}
                      </div>
                      <div className="text-xs text-gray-500 font-mono text-right mb-2">{new Date(record.timestamp).toLocaleTimeString('zh-CN')}</div>
-                     {record.aiComment && (
-                       <div className="text-xs text-gray-300 italic border-l-2 border-yellow-500/50 pl-3 py-1 bg-black/20 rounded-r">
-                         {record.aiComment}
-                       </div>
-                     )}
+                     {record.aiComment && (<div className="text-xs text-gray-300 italic border-l-2 border-yellow-500/50 pl-3 py-1 bg-black/20 rounded-r">{record.aiComment}</div>)}
                   </div>
                 ))
               )}
@@ -770,67 +590,36 @@ const App = () => {
         </div>
       )}
       
-      {/* CLEAR CONFIRM MODAL - Very High Z-Index */}
+      {/* DIALOGS */}
       {showClearConfirm && (
         <div className="fixed inset-0 flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 100 }}>
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowClearConfirm(false)}></div>
             <div className="relative bg-gray-900 border border-red-500/30 rounded-2xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center">
-                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
-                    <Trash2 size={32} className="text-red-500" />
-                </div>
+                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4"><Trash2 size={32} className="text-red-500" /></div>
                 <h3 className="text-2xl font-bold text-white mb-2">确认清空？</h3>
-                <p className="text-gray-400 mb-6">
-                    即将清空所有中奖记录，并将抽奖进度重置为<span className="text-yellow-500 font-bold">第 1 轮</span>。
-                    <br/>此操作无法撤销。
-                </p>
+                <p className="text-gray-400 mb-6">即将清空所有中奖记录，并将抽奖进度重置为<span className="text-yellow-500 font-bold">第 1 轮</span>。<br/>此操作无法撤销。</p>
                 <div className="flex gap-4 w-full">
-                    <button 
-                        onClick={() => setShowClearConfirm(false)}
-                        className="flex-1 bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition"
-                    >
-                        取消
-                    </button>
-                    <button 
-                        onClick={confirmClearHistory}
-                        className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition shadow-lg shadow-red-900/30"
-                    >
-                        确认清空
-                    </button>
+                    <button onClick={() => setShowClearConfirm(false)} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition">取消</button>
+                    <button onClick={confirmClearHistory} className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition shadow-lg shadow-red-900/30">确认清空</button>
                 </div>
             </div>
         </div>
       )}
 
-      {/* SINGLE RECORD DELETE CONFIRM MODAL - Even Higher Z-Index */}
       {recordToDelete && (
         <div className="fixed inset-0 flex items-center justify-center p-4 animate-fade-in" style={{ zIndex: 110 }}>
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setRecordToDelete(null)}></div>
             <div className="relative bg-gray-900 border border-red-500/30 rounded-2xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center">
-                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4">
-                    <Trash2 size={32} className="text-red-500" />
-                </div>
+                <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mb-4"><Trash2 size={32} className="text-red-500" /></div>
                 <h3 className="text-2xl font-bold text-white mb-2">作废该记录？</h3>
-                <p className="text-gray-400 mb-6 text-sm">
-                    该记录将被标记为<span className="text-red-400 font-bold">无效</span>，包含的<span className="text-yellow-500 font-bold">中奖者将回到奖池</span>，可再次参与抽奖。
-                </p>
+                <p className="text-gray-400 mb-6 text-sm">该记录将被标记为<span className="text-red-400 font-bold">无效</span>，中奖者将<span className="text-yellow-500 font-bold">回到奖池</span>。</p>
                 <div className="flex gap-4 w-full">
-                    <button 
-                        onClick={() => setRecordToDelete(null)}
-                        className="flex-1 bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition"
-                    >
-                        取消
-                    </button>
-                    <button 
-                        onClick={confirmDeleteRecord}
-                        className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition shadow-lg shadow-red-900/30"
-                    >
-                        确认作废
-                    </button>
+                    <button onClick={() => setRecordToDelete(null)} className="flex-1 bg-white/10 hover:bg-white/20 text-white py-3 rounded-xl font-bold transition">取消</button>
+                    <button onClick={confirmDeleteRecord} className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold transition shadow-lg shadow-red-900/30">确认作废</button>
                 </div>
             </div>
         </div>
       )}
-
     </div>
   );
 };
