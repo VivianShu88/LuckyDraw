@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { GoogleGenAI } from "@google/genai";
-import { Settings, Play, Square, Trophy, Users, Image as ImageIcon, Trash2, PartyPopper, Volume2, VolumeX, Upload, Wand2, Hash, X, AlertCircle } from "lucide-react";
+import { Settings, Play, Square, Trophy, Users, Image as ImageIcon, Trash2, PartyPopper, Volume2, VolumeX, Upload, Wand2, Hash, X, AlertCircle, Type } from "lucide-react";
 
 // --- Types ---
 interface Participant {
@@ -79,6 +79,11 @@ const SpeedLines = ({ isActive }: { isActive: boolean }) => {
 const App = () => {
   // -- State (Initialized Lazily from Storage) --
   
+  const [eventName, setEventName] = useState(() => {
+    const data = loadFromStorage();
+    return (data && data.eventName) ? data.eventName : "C³ 杭州家宴";
+  });
+
   const [allParticipants, setAllParticipants] = useState<Participant[]>(() => {
     const data = loadFromStorage();
     if (data && data.allParticipants) return data.allParticipants;
@@ -159,6 +164,7 @@ const App = () => {
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        eventName,
         allParticipants,
         history,
         bgImage,
@@ -168,7 +174,7 @@ const App = () => {
     } catch (e) {
       console.warn("Storage quota exceeded, settings (background) may not be saved.", e);
     }
-  }, [allParticipants, history, bgImage, isMuted, roundNumber]);
+  }, [eventName, allParticipants, history, bgImage, isMuted, roundNumber]);
 
   // -- Computed --
   // Winner IDs now excludes those in "deleted" records
@@ -414,7 +420,7 @@ const App = () => {
       {/* Header */}
       <header className="relative z-30 p-6 flex justify-between items-center bg-gradient-to-b from-black/90 to-transparent">
         <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white drop-shadow-md italic">
-          <span className="text-yellow-500">C³</span> 杭州家宴
+          {eventName}
         </h1>
         <div className="flex gap-3">
            <div className="hidden md:flex flex-col items-end mr-4 text-sm font-medium text-gray-200">
@@ -586,6 +592,17 @@ const App = () => {
             </div>
             
             <div className="p-6 overflow-y-auto space-y-8">
+              {/* Event Name Config */}
+              <section>
+                <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2"><Type size={16}/> 活动名称</h3>
+                <input 
+                  value={eventName}
+                  onChange={(e) => setEventName(e.target.value)}
+                  className="w-full bg-black/40 border border-white/20 rounded-lg p-3 text-sm text-white focus:ring-2 focus:ring-yellow-500 outline-none font-bold"
+                  placeholder="请输入活动名称"
+                />
+              </section>
+
               {/* Background Upload */}
               <section>
                 <h3 className="text-sm uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-2"><ImageIcon size={16}/> 背景图片</h3>
